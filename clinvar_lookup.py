@@ -1,5 +1,12 @@
 import gzip
-import tabix
+
+# Try to import pytabix-lite
+try:
+    import tabixlite as tbx
+    TABIX_AVAILABLE = True
+except ImportError:
+    TABIX_AVAILABLE = False
+
 
 # ------------------------------------------------------------
 # Parse INFO field
@@ -16,18 +23,17 @@ def parse_info_field(info_str):
 
 
 # ------------------------------------------------------------
-# FAST: Tabix-indexed ClinVar lookup
+# FAST: pytabix-lite lookup (works on Windows + Streamlit Cloud)
 # ------------------------------------------------------------
-def get_clinsig_tabix(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
-    """
-    Fast lookup using .tbi index.
-    Requires: pip install tabix
-    """
+def get_clinsig_tabixlite(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
+    if not TABIX_AVAILABLE:
+        return None
+
     chrom = chrom.replace("chr", "")
     pos = int(pos)
 
     try:
-        tb = tabix.open(vcf_path)
+        tb = tbx.TabixFile(vcf_path)
         records = tb.query(chrom, pos, pos)
     except Exception:
         return None
@@ -39,9 +45,7 @@ def get_clinsig_tabix(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
         v_alt = fields[4]
         info_str = fields[7]
 
-        if v_pos != pos:
-            continue
-        if v_ref != ref:
+        if v_pos != pos or v_ref != ref:
             continue
 
         alts = v_alt.split(",")
@@ -74,10 +78,6 @@ def get_clinsig_tabix(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
 # SLOW: Pure-Python fallback (linear scan)
 # ------------------------------------------------------------
 def get_clinsig_pure_python(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
-    """
-    Slow linear scan fallback.
-    Only used if tabix lookup fails.
-    """
     chrom = chrom.replace("chr", "")
     pos = int(pos)
 
@@ -123,14 +123,15 @@ def get_clinsig_pure_python(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
 
 
 # ------------------------------------------------------------
-# Unified helper: try tabix → fallback to pure Python
+# Unified helper: try tabix-lite → fallback to pure Python
 # ------------------------------------------------------------
 def get_clinsig(chrom, pos, ref, alt, vcf_path="clinvar.vcf.gz"):
     """
     Recommended entry point.
-    Uses fast tabix lookup if possible, otherwise falls back.
+    Uses fast pytabix-lite lookup if available,
+    otherwise falls back to pure Python linear scan.
     """
-    res = get_clinsig_tabix(chrom, pos, ref, alt, vcf_path=vcf_path)
+    res = get_clinsig_tabixlite(chrom, pos, ref, alt, vcf_path=vcf_path)
     if res:
         return res
     return get_clinsig_pure_python(chrom, pos, ref, alt, vcf_path=vcf_path)
